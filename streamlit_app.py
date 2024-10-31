@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta
 import sys
 from io import BytesIO
+import json  # Ensure json is imported
 
 # Configure logging
 logging.basicConfig(
@@ -70,7 +71,7 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
                 try:
                     # If publisher_info is a string, parse it as JSON
                     if isinstance(publisher_info, str):
-                        publisher_dict = pd.io.json.loads(publisher_info)
+                        publisher_dict = json.loads(publisher_info)
                     elif isinstance(publisher_info, dict):
                         publisher_dict = publisher_info
                     else:
@@ -82,8 +83,10 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
 
                     news_df.at[index, 'url_of_publisher'] = url
                     news_df.at[index, 'name_of_publisher'] = name
+                except json.JSONDecodeError as jde:
+                    logging.error(f"JSON decode error for publisher info at index {index}: {jde}")
                 except Exception as e:
-                    logging.error(f"Error parsing publisher info at index {index}: {e}")
+                    logging.error(f"Unexpected error parsing publisher info at index {index}: {e}")
 
             # Optional: Drop the original 'publisher' column if no longer needed
             news_df = news_df.drop(columns=['publisher'])
@@ -159,7 +162,7 @@ def make_clickable(val):
     Returns:
         str: HTML anchor tag with the URL.
     """
-    return f'<a href="{val}" target="_blank">{val}</a>' if val else ''
+    return f'<a href="{val}" target="_blank">Link</a>' if val else ''
 
 def make_name_clickable(name, url):
     """
@@ -208,7 +211,7 @@ def display_news_data(news_df: pd.DataFrame):
     if news_df.empty:
         st.info("No news articles to display.")
         return
-    
+
     # Create clickable links
     if 'link' in news_df.columns:
         news_df['link'] = news_df['link'].apply(make_clickable)
@@ -220,6 +223,13 @@ def display_news_data(news_df: pd.DataFrame):
 
     # Select columns to display
     display_columns = ['published date', 'title', 'description', 'link', 'name_of_publisher']
+
+    # Verify that all display columns exist
+    missing_columns = [col for col in display_columns if col not in news_df.columns]
+    if missing_columns:
+        st.error(f"The following required columns are missing from the data: {', '.join(missing_columns)}")
+        logging.error(f"Missing columns in DataFrame: {missing_columns}")
+        return
 
     # Convert DataFrame to HTML
     html_df = news_df[display_columns].to_html(escape=False, index=False)
