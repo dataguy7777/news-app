@@ -5,6 +5,10 @@ import logging
 from datetime import datetime, timedelta
 import sys
 import json
+from io import BytesIO
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
+import requests
+from bs4 import BeautifulSoup
 
 # Configure logging
 logging.basicConfig(
@@ -15,6 +19,33 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
+
+def fetch_preview(url: str) -> str:
+    """
+    Fetches a preview snippet from the given URL.
+
+    Args:
+        url (str): The URL of the webpage to fetch.
+
+    Returns:
+        str: A preview snippet extracted from the webpage.
+    """
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Attempt to extract the meta description
+        description = soup.find('meta', attrs={'name': 'description'})
+        if description and description.get('content'):
+            return description.get('content')[:150] + '...'  # Truncate to 150 chars
+
+        # Fallback to first 150 characters of visible text
+        text = ' '.join(soup.stripped_strings)
+        return text[:150] + '...' if len(text) > 150 else text
+    except Exception as e:
+        logging.error(f"Error fetching preview for URL {url}: {e}")
+        return "No preview available."
 
 def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max_results: int) -> pd.DataFrame:
     """
@@ -28,14 +59,6 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
 
     Returns:
         pd.DataFrame: DataFrame containing the scraped and processed news data.
-
-    Example:
-        >>> query = "Artificial Intelligence"
-        >>> start_date = datetime(2023, 1, 1)
-        >>> end_date = datetime(2023, 12, 31)
-        >>> max_results = 10
-        >>> df = scrape_google_news(query, start_date, end_date, max_results)
-        >>> print(df.head())
     """
     logging.info(f"Starting news scrape for query: '{query}' from {start_date.date()} to {end_date.date()} with max results {max_results}")
     try:
@@ -92,6 +115,12 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
             logging.info("Successfully parsed publisher information into separate columns.")
         else:
             logging.warning("'publisher' column not found in the scraped data. Skipping publisher parsing.")
+
+        # Add tooltip previews for links
+        if 'link' in news_df.columns:
+            news_df['link_preview'] = news_df['link'].apply(fetch_preview)
+        if 'url_of_publisher' in news_df.columns:
+            news_df['publisher_preview'] = news_df['url_of_publisher'].apply(fetch_preview)
 
         return news_df
     except Exception as e:
@@ -151,9 +180,25 @@ def configure_sidebar() -> dict:
         "max_results": max_results
     }
 
+def generate_excel_download(df: pd.DataFrame) -> bytes:
+    """
+    Generates an Excel file from the DataFrame.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to export.
+
+    Returns:
+        bytes: The Excel file in bytes.
+    """
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='GoogleNews')
+    processed_data = output.getvalue()
+    return processed_data
+
 def display_news_data(news_df: pd.DataFrame):
     """
-    Displays the scraped news data in the Streamlit app.
+    Displays the scraped news data in the Streamlit app with enhanced features.
 
     Args:
         news_df (pd.DataFrame): DataFrame containing news articles.
@@ -166,16 +211,61 @@ def display_news_data(news_df: pd.DataFrame):
         return
     
     st.subheader("Scraped News Articles")
-    st.dataframe(news_df)
 
-    # Optional: Allow users to download the data as CSV
-    csv = news_df.to_csv(index=False)
-    st.download_button(
-        label="Download Data as CSV",
-        data=csv,
-        file_name='google_news_results.csv',
-        mime='text/csv'
+    # Prepare DataFrame for AgGrid
+    grid_df = news_df.copy()
+
+    # Replace 'link' and 'url_of_publisher' with clickable links and add tooltips
+    if 'link' in grid_df.columns:
+        grid_df['link'] = grid_df.apply(
+            lambda row: f'<a href="{row["link"]}" target="_blank" title="{row["link_preview"]}">Link</a>', axis=1
+        )
+    if 'url_of_publisher' in grid_df.columns:
+        grid_df['url_of_publisher'] = grid_df.apply(
+            lambda row: f'<a href="{row["url_of_publisher"]}" target="_blank" title="{row["publisher_preview"]}">Publisher URL</a>', axis=1
+        )
+
+    # Define AgGrid options
+    gb = GridOptionsBuilder.from_dataframe(grid_df)
+    gb.configure_column("link", header="Article Link", escape=False)
+    gb.configure_column("url_of_publisher", header="Publisher URL", escape=False)
+    gb.configure_pagination(paginationAutoPageSize=True)  # Add pagination
+    gb.configure_side_bar()  # Add a sidebar
+    gb.configure_default_column(editable=False, sortable=True, filter=True)
+    gridOptions = gb.build()
+
+    # Display AgGrid
+    AgGrid(
+        grid_df,
+        gridOptions=gridOptions,
+        data_return_mode=DataReturnMode.FILTERED_AND_SORTED,
+        update_mode=GridUpdateMode.NO_UPDATE,
+        fit_columns_on_grid_load=True,
+        enable_enterprise_modules=False,
+        height=600,
+        width='100%',
+        allow_unsafe_jscode=True,  # Required to render HTML
     )
+
+    # Download buttons
+    st.markdown("### Download Data")
+    col1, col2 = st.columns(2)
+    with col1:
+        csv = news_df.to_csv(index=False)
+        st.download_button(
+            label="Download as CSV",
+            data=csv,
+            file_name='google_news_results.csv',
+            mime='text/csv'
+        )
+    with col2:
+        excel_data = generate_excel_download(news_df)
+        st.download_button(
+            label="Download as Excel",
+            data=excel_data,
+            file_name='google_news_results.xlsx',
+            mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
 
 def main():
     """
