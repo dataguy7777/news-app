@@ -2,7 +2,7 @@ import streamlit as st
 from gnews import GNews
 import pandas as pd
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 import sys
 
 # Configure logging
@@ -36,7 +36,7 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
         >>> df = scrape_google_news(query, start_date, end_date, max_results)
         >>> print(df.head())
     """
-    logging.info(f"Starting news scrape for query: '{query}' from {start_date} to {end_date} with max results {max_results}")
+    logging.info(f"Starting news scrape for query: '{query}' from {start_date.date()} to {end_date.date()} with max results {max_results}")
     try:
         google_news = GNews(language='en', country='US', max_results=max_results)
         google_news.start_date = start_date
@@ -65,38 +65,45 @@ def configure_sidebar() -> dict:
     Example:
         >>> user_inputs = configure_sidebar()
         >>> print(user_inputs)
-        {'query': 'Technology', 'start_date': datetime.datetime(2023, 1, 1, 0, 0), ...}
+        {'query': 'Technology', 'start_date': datetime.datetime(2022, 10, 30, 0, 0), ...}
     """
     st.sidebar.header("Google News Scraper Configuration")
 
     query = st.sidebar.text_input("Search Query", value="Artificial Intelligence")
     
-    st.sidebar.subheader("Start Date")
-    start_year = st.sidebar.number_input("Start Year", min_value=2000, max_value=2100, value=2023, step=1)
-    start_month = st.sidebar.number_input("Start Month", min_value=1, max_value=12, value=1, step=1)
-    start_day = st.sidebar.number_input("Start Day", min_value=1, max_value=31, value=1, step=1)
+    # Calculate tomorrow's date
+    today = datetime.today()
+    tomorrow = today + timedelta(days=1)
+    # Calculate start date as one year before tomorrow
+    one_year = timedelta(days=365)
+    start_date_default = tomorrow - one_year
+
+    st.sidebar.subheader("Date Range")
+    # Use date_input for better user experience
+    start_date = st.sidebar.date_input(
+        "Start Date",
+        value=start_date_default.date(),
+        min_value=datetime(2000, 1, 1).date(),
+        max_value=tomorrow.date()
+    )
     
-    st.sidebar.subheader("End Date")
-    end_year = st.sidebar.number_input("End Year", min_value=2000, max_value=2100, value=2023, step=1)
-    end_month = st.sidebar.number_input("End Month", min_value=1, max_value=12, value=12, step=1)
-    end_day = st.sidebar.number_input("End Day", min_value=1, max_value=31, value=31, step=1)
-    
+    end_date = st.sidebar.date_input(
+        "End Date",
+        value=tomorrow.date(),
+        min_value=start_date,
+        max_value=tomorrow.date()
+    )
+
     max_results = st.sidebar.slider("Maximum Results", min_value=1, max_value=100, value=10, step=1)
-    
-    # Convert user inputs to datetime objects
-    try:
-        start_date = datetime(start_year, start_month, start_day)
-        end_date = datetime(end_year, end_month, end_day)
-    except ValueError as ve:
-        st.sidebar.error(f"Invalid date input: {ve}")
-        logging.error(f"Invalid date input: {ve}")
-        start_date = datetime.now()
-        end_date = datetime.now()
-    
+
+    # Convert date inputs to datetime objects
+    start_datetime = datetime.combine(start_date, datetime.min.time())
+    end_datetime = datetime.combine(end_date, datetime.max.time())
+
     return {
         "query": query,
-        "start_date": start_date,
-        "end_date": end_date,
+        "start_date": start_datetime,
+        "end_date": end_datetime,
         "max_results": max_results
     }
 
