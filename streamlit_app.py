@@ -48,7 +48,16 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
             return pd.DataFrame()
 
         news_df = pd.DataFrame(result)
-        logging.info(f"Successfully scraped {len(news_df)} articles.")
+
+        # Parse 'published date' to datetime for accurate sorting
+        if 'published date' in news_df.columns:
+            news_df['published date'] = pd.to_datetime(news_df['published date'], errors='coerce')
+            news_df = news_df.dropna(subset=['published date'])
+            news_df = news_df.sort_values(by='published date', ascending=False)
+            logging.info(f"Successfully scraped and sorted {len(news_df)} articles by published date.")
+        else:
+            logging.warning("'published date' column not found in the scraped data. Skipping sorting.")
+
         return news_df
     except Exception as e:
         logging.error(f"Error scraping Google News: {e}", exc_info=True)
@@ -65,7 +74,7 @@ def configure_sidebar() -> dict:
     Example:
         >>> user_inputs = configure_sidebar()
         >>> print(user_inputs)
-        {'query': 'Technology', 'start_date': datetime.datetime(2022, 10, 30, 0, 0), ...}
+        {'query': 'Technology', 'start_date': datetime.datetime(2022, 10, 31, 0, 0), ...}
     """
     st.sidebar.header("Google News Scraper Configuration")
 
