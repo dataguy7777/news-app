@@ -57,7 +57,11 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
         # Parse 'published date' to datetime for accurate sorting
         if 'published date' in news_df.columns:
             news_df['published date'] = pd.to_datetime(news_df['published date'], errors='coerce')
+            initial_count = len(news_df)
             news_df = news_df.dropna(subset=['published date'])
+            dropped_count = initial_count - len(news_df)
+            if dropped_count > 0:
+                logging.warning(f"Dropped {dropped_count} articles due to invalid 'published date'.")
             news_df = news_df.sort_values(by='published date', ascending=False)
             logging.info(f"Successfully scraped and sorted {len(news_df)} articles by published date.")
         else:
@@ -165,7 +169,7 @@ def make_clickable(val):
     Returns:
         str: HTML anchor tag with the URL.
     """
-    return f'<a href="{val}" target="_blank">Link</a>' if val else ''
+    return f'<a href="{val}" target="_blank">Link</a>' if val else 'N/A'
 
 def make_name_clickable(name, url):
     """
@@ -183,7 +187,7 @@ def make_name_clickable(name, url):
     elif name:
         return name
     else:
-        return ''
+        return 'N/A'
 
 def convert_df_to_excel(df: pd.DataFrame) -> BytesIO:
     """
@@ -218,11 +222,16 @@ def display_news_data(news_df: pd.DataFrame):
     # Create clickable links
     if 'url' in news_df.columns:
         news_df['url'] = news_df['url'].apply(make_clickable)
+    else:
+        logging.warning("'url' column not found in DataFrame.")
+
     if 'url_of_publisher' in news_df.columns and 'name_of_publisher' in news_df.columns:
         news_df['name_of_publisher'] = news_df.apply(
             lambda row: make_name_clickable(row['name_of_publisher'], row['url_of_publisher']),
             axis=1
         )
+    else:
+        logging.warning("'url_of_publisher' or 'name_of_publisher' columns not found in DataFrame.")
 
     # Select columns to display
     display_columns = ['published date', 'title', 'description', 'url', 'name_of_publisher']
@@ -234,10 +243,35 @@ def display_news_data(news_df: pd.DataFrame):
         logging.error(f"Missing columns in DataFrame: {missing_columns}")
         return
 
-    # Convert DataFrame to HTML
-    html_df = news_df[display_columns].to_html(escape=False, index=False)
+    # Convert DataFrame to HTML with styling
+    table_style = """
+    <style>
+    table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    th, td {
+        padding: 8px 12px;
+        border: 1px solid #ddd;
+        text-align: left;
+    }
+    th {
+        background-color: #f2f2f2;
+    }
+    a {
+        color: #1E90FF;
+        text-decoration: none;
+    }
+    a:hover {
+        text-decoration: underline;
+    }
+    </style>
+    """
 
+    # Apply styling
+    st.markdown(table_style, unsafe_allow_html=True)
     st.markdown("### Scraped News Articles", unsafe_allow_html=True)
+    html_df = news_df[display_columns].to_html(escape=False, index=False)
     st.markdown(html_df, unsafe_allow_html=True)
 
     # Download as CSV
