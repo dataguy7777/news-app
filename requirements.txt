@@ -1,3 +1,7 @@
 streamlit
 gnews
 pandas
+openpyxl
+streamlit-aggrid
+requests
+beautifulsoup4
