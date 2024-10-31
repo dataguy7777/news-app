@@ -51,6 +51,9 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
 
         news_df = pd.DataFrame(result)
 
+        # Log the columns received
+        logging.info(f"Columns received from GNews: {news_df.columns.tolist()}")
+
         # Parse 'published date' to datetime for accurate sorting
         if 'published date' in news_df.columns:
             news_df['published date'] = pd.to_datetime(news_df['published date'], errors='coerce')
@@ -213,8 +216,8 @@ def display_news_data(news_df: pd.DataFrame):
         return
 
     # Create clickable links
-    if 'link' in news_df.columns:
-        news_df['link'] = news_df['link'].apply(make_clickable)
+    if 'url' in news_df.columns:
+        news_df['url'] = news_df['url'].apply(make_clickable)
     if 'url_of_publisher' in news_df.columns and 'name_of_publisher' in news_df.columns:
         news_df['name_of_publisher'] = news_df.apply(
             lambda row: make_name_clickable(row['name_of_publisher'], row['url_of_publisher']),
@@ -222,7 +225,7 @@ def display_news_data(news_df: pd.DataFrame):
         )
 
     # Select columns to display
-    display_columns = ['published date', 'title', 'description', 'link', 'name_of_publisher']
+    display_columns = ['published date', 'title', 'description', 'url', 'name_of_publisher']
 
     # Verify that all display columns exist
     missing_columns = [col for col in display_columns if col not in news_df.columns]
