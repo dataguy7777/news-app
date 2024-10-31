@@ -4,6 +4,7 @@ import pandas as pd
 import logging
 from datetime import datetime, timedelta
 import sys
+import json
 
 # Configure logging
 logging.basicConfig(
@@ -26,7 +27,7 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
         max_results (int): Maximum number of news results to return.
 
     Returns:
-        pd.DataFrame: DataFrame containing the scraped news data.
+        pd.DataFrame: DataFrame containing the scraped and processed news data.
 
     Example:
         >>> query = "Artificial Intelligence"
@@ -57,6 +58,40 @@ def scrape_google_news(query: str, start_date: datetime, end_date: datetime, max
             logging.info(f"Successfully scraped and sorted {len(news_df)} articles by published date.")
         else:
             logging.warning("'published date' column not found in the scraped data. Skipping sorting.")
+
+        # Parse 'publisher' information
+        if 'publisher' in news_df.columns:
+            # Initialize new columns
+            news_df['url_of_publisher'] = None
+            news_df['name_of_publisher'] = None
+
+            for index, row in news_df.iterrows():
+                publisher_info = row['publisher']
+                try:
+                    # If publisher_info is a string, parse it as JSON
+                    if isinstance(publisher_info, str):
+                        publisher_dict = json.loads(publisher_info)
+                    elif isinstance(publisher_info, dict):
+                        publisher_dict = publisher_info
+                    else:
+                        raise ValueError("Unknown format for publisher information.")
+
+                    # Extract 'href' and 'title'
+                    url = publisher_dict.get('href', None)
+                    name = publisher_dict.get('title', None)
+
+                    news_df.at[index, 'url_of_publisher'] = url
+                    news_df.at[index, 'name_of_publisher'] = name
+                except json.JSONDecodeError as jde:
+                    logging.error(f"JSON decode error for publisher info at index {index}: {jde}")
+                except Exception as e:
+                    logging.error(f"Unexpected error parsing publisher info at index {index}: {e}")
+
+            # Optional: Drop the original 'publisher' column if no longer needed
+            news_df = news_df.drop(columns=['publisher'])
+            logging.info("Successfully parsed publisher information into separate columns.")
+        else:
+            logging.warning("'publisher' column not found in the scraped data. Skipping publisher parsing.")
 
         return news_df
     except Exception as e:
